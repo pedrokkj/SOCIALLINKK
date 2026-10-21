@@ -1,0 +1,20 @@
+.settings-card{max-width:860px;padding:24px}
+.settings-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.settings-card-header .eyebrow{margin:0 0 6px;font-size:10px;letter-spacing:.08em}
+.settings-card-header h2{margin:0;font-size:21px}
+.settings-status{flex:none;max-width:45%;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:#f7f8f5;color:#727e76;font-size:11px}
+.settings-status.is-connected{border-color:#cbded0;background:#eff6f0;color:#345b42}
+.settings-description{max-width:600px;margin:18px 0;color:var(--muted);line-height:1.6}
+.settings-key-field{max-width:600px}
+.settings-key-field label{font-size:12px}
+.settings-key-field input{height:44px;font-size:13px}
+.settings-actions{display:flex;justify-content:flex-start;margin-top:14px}
+.settings-note{max-width:600px;margin:14px 0 0;color:#89948d;font-size:11px;line-height:1.6}
+@media(max-width:760px){.settings-card{padding:18px}.settings-card-header{flex-direction:column;gap:12px}.settings-status{max-width:100%}}
+.instagram-settings-card{margin-top:18px}
+.settings-redirect{display:grid;gap:8px;max-width:760px;margin-top:20px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#f7f8f5}
+.settings-redirect span{color:var(--muted);font-size:11px;font-weight:600}
+.settings-redirect code{overflow-wrap:anywhere;color:#303a34;font-size:12px;user-select:all}
+.client-workspace-head .instagram-connected{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eff8ef;color:#267343}
+.client-workspace-head [data-action="instagram-connect"]{flex:none}
+@media(max-width:760px){.client-workspace-head{flex-wrap:wrap}.client-workspace-head [data-action="instagram-connect"]{margin-left:auto}}

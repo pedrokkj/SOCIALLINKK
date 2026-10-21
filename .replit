@@ -1,0 +1,5 @@
+run = "HOST=0.0.0.0 PORT=5000 node --no-warnings server.mjs"
+
+[[ports]]
+localPort = 5000
+externalPort = 80

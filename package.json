@@ -1,0 +1,13 @@
+{
+  "name": "3a-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fundação local da plataforma interna da agência 3A.",
+  "scripts": {
+    "start": "node --no-warnings server.mjs",
+    "build": "node --check server.mjs",
+    "dev": "node --no-warnings server.mjs",
+    "test": "node --test --experimental-test-isolation=none"
+  },
+  "engines": { "node": ">=22.5" }
+}

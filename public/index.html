@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Social Ink · Inteligência criativa em escala</title>
+  <meta name="description" content="Plataforma interna da agência 3A para gestão de clientes, fluxos de conteúdo com IA e quadros de acompanhamento." />
+  <meta property="og:title" content="Social Ink · Inteligência criativa em escala" />
+  <meta property="og:description" content="Plataforma interna da agência 3A para gestão de clientes, fluxos de conteúdo com IA e quadros de acompanhamento." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=social-ink-14" />
+  <link rel="stylesheet" href="/settings.css?v=2" />
+  <link rel="stylesheet" href="/boards-ui/boards.css?v=9" />
+  <script src="/app.js?v=social-ink-19" defer></script>
+  <script src="/boards-ui/boards.js?v=8" defer></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <main id="gate" class="gate"><section class="gate-card"><div class="brand-lockup"><img class="social-ink-wordmark" src="/social-ink-logo.png" alt="Social Ink"></div><p class="eyebrow">INTELIGÊNCIA CRIATIVA EM ESCALA</p><h1 id="gate-title">Sua agência, em movimento.</h1><p id="gate-copy" class="muted">Estratégia, referências e inteligência artificial em um só espaço.</p><form id="gate-form" class="form-grid"></form><p class="gate-foot">SOCIAL INK · WORKSPACE</p></section></main>
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <a class="brand" href="#clients" aria-label="Social Ink"><span class="social-ink-logo-frame"><img class="social-ink-wordmark" src="/social-ink-logo.png" alt="Social Ink"><img class="social-ink-mark" src="/social-ink-mark-glossy.png" alt="" aria-hidden="true"></span></a>
+      <div class="workspace-label">ESPAÇO DE TRABALHO</div>
+      <nav class="main-nav" aria-label="Navegação principal"><button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>Início</button><button class="nav-item" data-page="clients"><span class="nav-icon">◫</span>Clientes<span id="client-count" class="nav-count">0</span></button><button class="nav-item" data-page="flows"><span class="nav-icon">⌘</span>Fluxos<span id="approval-count" class="nav-count hidden">0</span></button><button class="nav-item" data-page="boards"><span class="nav-icon">▤</span>Quadros</button><button class="nav-item" data-page="tasks"><span class="nav-icon">☑</span>Tarefas</button><button class="nav-item" data-page="calendar"><span class="nav-icon">▦</span>Calendário</button><button class="nav-item" data-page="library"><span class="nav-icon">▧</span>Biblioteca</button><button class="nav-item" data-page="reports"><span class="nav-icon">▥</span>Relatórios</button></nav>
+      <div class="sidebar-group-label">GERENCIAMENTO</div>
+      <nav class="main-nav secondary-nav" aria-label="Gerenciamento"><button class="nav-item" data-page="team"><span class="nav-icon">♧</span>Usuários</button><button class="nav-item" data-page="roles"><span class="nav-icon">◈</span>Cargos e permissões</button><button class="nav-item" data-page="settings"><span class="nav-icon">⚙︎</span>Configurações</button></nav>
+      <div class="sidebar-bottom"><div class="security-note"><span class="status-dot"></span><span>Ambiente privado<small>Seus dados ficam salvos no servidor.</small></span></div><button id="profile-button" class="profile-button" type="button" aria-label="Editar perfil"><span id="user-avatar" class="avatar">3</span><span class="profile-label"><b id="user-name">Usuário</b><small id="user-role">Administrador</small></span><span class="more">···</span></button><button id="logout" class="sidebar-logout" type="button">Sair da plataforma</button></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar"><div class="global-search-wrap"><span class="search-glyph">⌕</span><input id="global-search" type="search" placeholder="Buscar clientes, conteúdos, tarefas…" aria-label="Buscar no Workspace"><div id="global-search-results" class="global-search-results hidden"></div></div><div class="top-actions"><button class="top-icon-button" id="top-notifications" type="button" aria-label="Abrir aprovações">♧<span id="top-notification-dot" class="notification-dot hidden"></span></button><button class="top-icon-button" id="top-help" type="button" aria-label="Ajuda">?</button><button class="top-new-content" id="top-new-content" type="button"><span>＋</span> Novo conteúdo <b>⌄</b></button></div></header>
+      <section id="page-home" class="page home-page"></section>
+      <section id="page-clients" class="page hidden"></section>
+      <section id="page-flows" class="page hidden"></section>
+      <section id="page-approvals" class="page hidden"></section>
+      <section id="page-boards" class="page hidden"></section>
+      <section id="page-calendar" class="page hidden"></section>
+      <section id="page-tasks" class="page hidden"></section>
+      <section id="page-library" class="page hidden"></section>
+      <section id="page-reports" class="page hidden"></section>
+      <section id="page-team" class="page hidden"></section>
+      <section id="page-roles" class="page hidden"></section>
+      <section id="page-settings" class="page hidden"></section>
+    </main>
+  </div>
+  <dialog id="modal" class="modal"><form method="dialog" class="modal-frame"><button class="modal-close" aria-label="Fechar">×</button><div id="modal-content"></div></form></dialog>
+  <dialog id="profile-modal" class="profile-modal"><button class="profile-modal-close" type="button" aria-label="Fechar">×</button><div id="profile-modal-content"></div></dialog>
+</body>
+</html>
+
+

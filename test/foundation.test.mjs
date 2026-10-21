@@ -1,0 +1,193 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
+const dataDir=mkdtempSync(join(tmpdir(),'3a-workspace-test-'));
+process.env.DATA_DIR=dataDir;
+process.env.NODE_ENV='test';
+delete process.env.OPENAI_API_KEY;
+const {db,server}=await import('../server.mjs');
+await new Promise(resolveListen=>server.listen(0,'127.0.0.1',resolveListen));
+const base=`http://127.0.0.1:${server.address().port}`;
+async function request(path,{method='GET',body,cookie,headers={}}={}) {
+  const response=await fetch(`${base}${path}`,{method,headers:{...(body!==undefined?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{}),...headers},body:body===undefined?undefined:(body instanceof ArrayBuffer?body:JSON.stringify(body))});
+  const type=response.headers.get('content-type')||''; const data=type.includes('application/json')?await response.json():await response.arrayBuffer();
+  return {response,data};
+}
+
+test('stores client profiles and references and enforces role permissions',async t=>{
+  t.after(async()=>{
+    await new Promise(resolveClose=>server.close(resolveClose)); db.close();
+    const reopened=new DatabaseSync(join(dataDir,'3a-workspace.sqlite'));
+    assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM clients').get().count,1);
+    assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM assets').get().count,2);
+    assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM boards').get().count,1);
+    assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM board_cards').get().count,2);
+    reopened.close(); rmSync(dataDir,{recursive:true,force:true});
+  });
+  let result=await request('/'); assert.equal(result.response.status,200); assert.match(new TextDecoder().decode(result.data),/data-page="settings"/); assert.match(new TextDecoder().decode(result.data),/data-page="boards"/); assert.match(new TextDecoder().decode(result.data),/app\.js\?v=social-ink-8/);
+  result=await request('/app.js?v=social-ink-8'); assert.equal(result.response.status,200);
+  const appSource=new TextDecoder().decode(result.data);
+  assert.equal((appSource.match(/function navigate\(page\)/g)||[]).length,1,'navigation must have a single authoritative implementation');
+  assert.match(appSource,/key of \['home', 'clients', 'flows', 'approvals', 'boards'/);
+  assert.match(appSource,/typeof window\.renderBoards === 'function'/);
+  result=await request('/settings.css'); assert.equal(result.response.status,200); assert.match(result.response.headers.get('content-type'),/text\/css/);
+  result=await request('/boards-ui/boards.js'); assert.equal(result.response.status,200); assert.match(result.response.headers.get('content-type'),/javascript/); assert.match(new TextDecoder().decode(result.data),/window\.renderBoards/);
+  result=await request('/boards-ui/boards.css'); assert.equal(result.response.status,200); assert.match(result.response.headers.get('content-type'),/text\/css/);
+  result=await request('/api/setup-status'); assert.equal(result.data.setupRequired,true);
+  result=await request('/api/setup-admin',{method:'POST',body:{name:'Admin 3A',email:'admin@example.com',password:'senha-segura-3A-2026'}}); assert.equal(result.response.status,201); assert.ok(result.data.user.role.permissions.includes('flows.write')); const adminId=result.data.user.id;
+  result=await request('/api/setup-admin',{method:'POST',body:{name:'Outro',email:'outro@example.com',password:'senha-segura-3A-2026'}}); assert.equal(result.response.status,409);
+  result=await request('/api/login',{method:'POST',body:{email:'admin@example.com',password:'senha-segura-3A-2026'}}); assert.equal(result.response.status,200);
+  const adminCookie=result.response.headers.get('set-cookie').split(';')[0];
+  result=await request('/api/roles',{method:'POST',cookie:adminCookie,body:{name:'Leitura',description:'Consulta perfis.',permissions:['clients.read','flows.read']}}); assert.equal(result.response.status,201); const roleId=result.data.role.id;
+  result=await request('/api/users',{method:'POST',cookie:adminCookie,body:{name:'Pessoa da equipe',email:'equipe@example.com',password:'senha-equipe-segura-2026',roleId}}); assert.equal(result.response.status,201); const staffUserId=result.data.user.id;
+  result=await request('/api/login',{method:'POST',body:{email:'equipe@example.com',password:'senha-equipe-segura-2026'}}); assert.equal(result.response.status,200); const staffCookie=result.response.headers.get('set-cookie').split(';')[0];
+  result=await request('/api/integrations/openai',{cookie:staffCookie}); assert.equal(result.response.status,403);
+  result=await request('/api/clients',{method:'POST',cookie:adminCookie,body:{name:'Café Aurora',segment:'Gastronomia',audience:'Pessoas do bairro',voice:'Acolhedor',offerings:'Café e brunch',objectives:['Marca','Vendas'],contentPillars:['Bastidores','Novidades'],brandColors:['#244C3E'],postingDays:['terça','quinta'],postingTime:'10:00'}});
+  assert.equal(result.response.status,201); const clientId=result.data.client.id; assert.equal(result.data.client.postingTime,'10:00');
+  result=await request(`/api/clients/${clientId}`,{method:'PUT',cookie:adminCookie,body:{...result.data.client,description:'Cafeteria artesanal.'}}); assert.equal(result.response.status,200); assert.equal(result.data.client.description,'Cafeteria artesanal.');
+  const image=Buffer.from('reference-image-bytes');
+  result=await request(`/api/clients/${clientId}/assets?name=post.png&category=published-post`,{method:'POST',cookie:adminCookie,headers:{'content-type':'image/png'},body:image.buffer.slice(image.byteOffset,image.byteOffset+image.byteLength)});
+  assert.equal(result.response.status,201); const assetId=result.data.asset.id; assert.equal(result.data.asset.category,'published-post');
+  const logo=Buffer.from('original-logo-bytes');
+  result=await request(`/api/clients/${clientId}/assets?name=LOGOMARCA.png&category=logo`,{method:'POST',cookie:adminCookie,headers:{'content-type':'image/png'},body:logo.buffer.slice(logo.byteOffset,logo.byteOffset+logo.byteLength)});
+  assert.equal(result.response.status,201); const logoId=result.data.asset.id;
+  result=await request('/api/flows',{method:'POST',cookie:adminCookie,body:{clientId}}); assert.equal(result.response.status,201); const flowId=result.data.flow.id; assert.deepEqual(result.data.flow.publishDays,['terça','quinta','domingo']);
+  result=await request('/api/integrations/openai',{cookie:adminCookie}); assert.equal(result.response.status,200); assert.equal(result.data.configured,false);
+  result=await request(`/api/flows/${flowId}/test`,{method:'POST',cookie:adminCookie,body:{type:'full'}}); assert.equal(result.response.status,409);
+  result=await request(`/api/flows/${flowId}/runs`,{cookie:adminCookie}); assert.equal(result.response.status,200); assert.deepEqual(result.data.runs,[]);
+  result=await request('/api/integrations/openai',{method:'PUT',cookie:adminCookie,body:{apiKey:`sk-test-${'x'.repeat(32)}`}}); assert.equal(result.response.status,200); assert.equal(result.data.configured,true); assert.equal(JSON.stringify(result.data).includes('sk-test'),false);
+  result=await request('/api/integrations/openai',{cookie:adminCookie}); assert.equal(result.data.configured,true); assert.equal(result.data.source,'local');
+  result=await request(`/api/flows/${flowId}`,{method:'PUT',cookie:adminCookie,body:{imageAssetIds:[]}}); assert.equal(result.response.status,200);
+  const realFetch=globalThis.fetch; const openAiRequests=[];
+  globalThis.fetch=async(input,options)=>{
+    if(String(input).startsWith('https://api.openai.com/')){
+      openAiRequests.push({url:String(input),headers:options.headers,body:options.body});
+      return new Response(JSON.stringify({data:[{b64_json:Buffer.from('generated-image').toString('base64')}]}),{status:200,headers:{'content-type':'application/json'}});
+    }
+    return realFetch(input,options);
+  };
+  try {
+    result=await request(`/api/flows/${flowId}/test`,{method:'POST',cookie:adminCookie,body:{type:'image'}});
+    assert.equal(result.response.status,200); assert.equal(openAiRequests.at(-1).url.endsWith('/images/generations'),true);
+    assert.equal(openAiRequests.at(-1).headers['content-type'],'application/json');
+    const imageRequest=JSON.parse(openAiRequests.at(-1).body);assert.equal(imageRequest.model,'gpt-image-2.5-sunburst');assert.equal(imageRequest.quality,'high');assert.equal(imageRequest.size,'1024x1280');
+    assert.match(imageRequest.prompt,/Never reproduce any reference's headline, caption, subject/);assert.doesNotMatch(imageRequest.prompt,/post\.png/,'the image model does not receive source post files');
+    result=await request(`/api/flows/${flowId}`,{method:'PUT',cookie:adminCookie,body:{imageAssetIds:[],briefingAssetIds:[]}}); assert.equal(result.response.status,200);
+    result=await request(`/api/flows/${flowId}/test`,{method:'POST',cookie:adminCookie,body:{type:'image'}});
+    assert.equal(result.response.status,200); assert.equal(openAiRequests.at(-1).url.endsWith('/images/generations'),true);
+    assert.equal(openAiRequests.at(-1).headers['content-type'],'application/json');
+  } finally { globalThis.fetch=realFetch; }
+  const fetchBeforePipeline=globalThis.fetch;
+  let briefingRequestBody;
+  globalThis.fetch=async(input,options)=>{
+    if(String(input).startsWith('https://api.openai.com/v1/responses')){briefingRequestBody=JSON.parse(options.body);return new Response(JSON.stringify({output_text:JSON.stringify({briefing:'Explicar a importância da perícia contábil.',caption:'Veja como funciona.\n\nConsulte uma especialista para entender seu caso.\n.\n.\n.\n#periciacontabil #assistenciatecnica #contabilidade #periciajudicial #direito',art_text:{headline:'Perícia com clareza e confiança',supporting_text:'Análise técnica para decisões mais seguras.',cta:'Fale com a Accert',alignment:'left',uppercase:true,highlight_phrase:'clareza',font_style:'editorial_serif'},visual_concept:'Consultoria contábil em ambiente jurídico contemporâneo.',visual_direction:'Editorial sofisticado, tons de areia e dourado, sem elementos decorativos irrelevantes.',visual_elements:['balança judicial discreta','documento técnico']})}),{status:200,headers:{'content-type':'application/json'}});}
+    if(String(input).startsWith('https://api.openai.com/v1/images/'))return new Response(JSON.stringify({data:[{b64_json:Buffer.from('approved-image').toString('base64')}]}),{status:200,headers:{'content-type':'application/json'}});
+    return fetchBeforePipeline(input,options);
+  };
+  try {
+    result=await request(`/api/flows/${flowId}`,{method:'PUT',cookie:adminCookie,body:{imageAssetIds:[assetId,logoId],briefingAssetIds:[assetId]}});assert.equal(result.response.status,200);
+    result=await request(`/api/flows/${flowId}/test`,{method:'POST',cookie:adminCookie,body:{type:'full'}});assert.equal(result.response.status,202);const runId=result.data.run.id;
+    let pipelineRun;for(let attempt=0;attempt<20;attempt++){pipelineRun=(await request(`/api/flows/${flowId}/runs`,{cookie:adminCookie})).data.runs.find(item=>item.id===runId);if(pipelineRun?.status!=='running')break;await new Promise(resolve=>setTimeout(resolve,5));}
+    assert.equal(pipelineRun.status,'pending_approval');assert.match(pipelineRun.caption,/^Veja como funciona\./);assert.match(pipelineRun.caption,/#periciacontabil/);
+    assert.equal(pipelineRun.creativeSpec.art_text.headline,'Perícia com clareza e confiança');assert.equal(pipelineRun.creativeSpec.art_text.cta,'');assert.equal(pipelineRun.creativeSpec.art_text.alignment,'left');assert.equal(pipelineRun.creativeSpec.art_text.uppercase,true);assert.equal(pipelineRun.creativeSpec.art_text.font_style,'editorial_serif');
+    assert.match(briefingRequestBody.input[0].content[0].text,/PADRÃO GERAL DA AGÊNCIA/);assert.match(briefingRequestBody.input[0].content[0].text,/exatamente 5 hashtags/);assert.match(briefingRequestBody.input[0].content[0].text,/Posts de referência NÃO são anexados ao gerador de texto/);assert.doesNotMatch(briefingRequestBody.input[0].content[0].text,/post\.png/,'reference filenames are not sent to copywriting');assert.equal(briefingRequestBody.input[0].content.some(item=>item.type==='input_image'),false,'reference images are excluded from copywriting');
+    result=await request(pipelineRun.imageUrl,{cookie:adminCookie});
+    assert.equal(result.response.headers.get('content-type'),'image/png');
+    assert.equal(Buffer.from(result.data).toString(),'approved-image','the generated image response is saved and served without alteration');
+    result=await request(`/api/flow-runs/${runId}/revise`,{method:'POST',cookie:adminCookie,body:{note:'Trocar o gancho por algo mais direto.'}});assert.equal(result.response.status,202);const revisedId=result.data.run.id;
+    for(let attempt=0;attempt<20;attempt++){pipelineRun=(await request(`/api/flows/${flowId}/runs`,{cookie:adminCookie})).data.runs.find(item=>item.id===revisedId);if(pipelineRun?.status!=='running')break;await new Promise(resolve=>setTimeout(resolve,5));}
+    assert.equal(pipelineRun.status,'pending_approval');assert.equal(pipelineRun.versionNumber,2);assert.equal(pipelineRun.parentRunId,runId);
+    result=await request('/api/approvals',{cookie:adminCookie});assert.equal(result.data.approvals.length,1);assert.equal(result.data.approvals[0].versions.length,2);assert.equal(result.data.approvals[0].versions[0].status,'superseded');
+    result=await request(`/api/flow-runs/${revisedId}/approve`,{method:'POST',cookie:adminCookie,body:{}});assert.equal(result.response.status,200);assert.equal(result.data.run.status,'approved');assert.ok(result.data.run.scheduledAt);
+    result=await request('/api/approvals?status=approved',{cookie:adminCookie});assert.equal(result.response.status,200);assert.equal(result.data.approvals.length,1);assert.equal(result.data.approvals[0].id,revisedId);assert.equal(result.data.approvals[0].status,'approved');assert.ok(result.data.approvals[0].approvedAt);
+    result=await request('/api/approvals?status=pending_approval',{cookie:adminCookie});assert.equal(result.data.approvals.length,0,'approved content leaves the pending queue');
+  } finally { globalThis.fetch=fetchBeforePipeline; }
+  result=await request(`/api/flows/${flowId}`,{method:'PUT',cookie:adminCookie,body:{generationDay:'quarta',postsPerCycle:4,publishDays:['terça','quinta'],publishTime:'18:30',briefingInstructions:'Priorize dicas práticas.',briefingAssetIds:[assetId,'invalid-id'],imageInstructions:'Use a paleta da marca.',imageAssetIds:[assetId,logoId]}});
+  assert.equal(result.response.status,200); assert.equal(result.data.flow.postsPerCycle,4); assert.deepEqual(result.data.flow.briefingAssetIds,[assetId]); assert.deepEqual(result.data.flow.publishDays,['terça','quinta']);
+  result=await request('/api/clients',{cookie:staffCookie}); assert.equal(result.response.status,200); assert.equal(result.data.clients[0].name,'Café Aurora'); assert.ok(result.data.clients[0].assets.some(asset=>asset.id===assetId)); assert.ok(result.data.clients[0].assets.some(asset=>asset.id===logoId));
+  result=await request('/api/clients',{method:'POST',cookie:staffCookie,body:{name:'Sem autorização'}}); assert.equal(result.response.status,403);
+  result=await request('/api/flows',{cookie:staffCookie}); assert.equal(result.response.status,200);
+  result=await request('/api/flows',{method:'POST',cookie:staffCookie,body:{clientId}}); assert.equal(result.response.status,403);
+  result=await request(`/api/assets/${assetId}`,{cookie:staffCookie}); assert.equal(result.response.status,200); assert.equal(Buffer.from(result.data).toString(),image.toString());
+  result=await request(`/api/users/${adminId}`,{method:'DELETE',cookie:adminCookie}); assert.equal(result.response.status,400);
+  result=await request(`/api/users/${staffUserId}`,{method:'DELETE',cookie:adminCookie}); assert.equal(result.response.status,200);
+  result=await request('/api/me',{cookie:staffCookie}); assert.equal(result.response.status,401);
+  result=await request('/api/roles',{method:'POST',cookie:adminCookie,body:{name:'Gestor de acessos',permissions:['users.manage']}}); assert.equal(result.response.status,201); const managerRoleId=result.data.role.id;
+  result=await request('/api/users',{method:'POST',cookie:adminCookie,body:{name:'Gestor',email:'gestor@example.com',password:'senha-gestor-segura-2026',roleId:managerRoleId}}); assert.equal(result.response.status,201);
+  result=await request('/api/login',{method:'POST',body:{email:'gestor@example.com',password:'senha-gestor-segura-2026'}}); assert.equal(result.response.status,200); const managerCookie=result.response.headers.get('set-cookie').split(';')[0];
+  result=await request(`/api/users/${adminId}`,{method:'DELETE',cookie:managerCookie}); assert.equal(result.response.status,409);
+
+  result=await request('/api/boards',{cookie:managerCookie}); assert.equal(result.response.status,403);
+  result=await request('/api/boards',{method:'POST',cookie:adminCookie,body:{name:'Produção da agência',description:'Trabalho editorial e campanhas.'}});
+  assert.equal(result.response.status,201); const board=result.data.board; const boardId=board.id;
+  assert.deepEqual(board.columns.map(column=>column.name),['A fazer','Em andamento','Concluído']);
+  result=await request('/api/boards',{cookie:adminCookie}); assert.equal(result.response.status,200); assert.equal(result.data.boards[0].id,boardId);
+  result=await request(`/api/boards/${boardId}/cards`,{method:'POST',cookie:adminCookie,body:{columnId:board.columns[0].id,title:'Preparar pauta',description:'Definir o gancho do mês.',clientId,dueDate:'2026-10-20'}});
+  assert.equal(result.response.status,201); const firstCard=result.data.card;
+  assert.equal(firstCard.clientId,clientId); assert.equal(firstCard.clientName,'Café Aurora'); assert.equal(firstCard.dueDate,'2026-10-20');
+  result=await request(`/api/boards/${boardId}/cards`,{method:'POST',cookie:adminCookie,body:{columnId:board.columns[0].id,title:'Revisar referências'}});
+  assert.equal(result.response.status,201); const secondCard=result.data.card;
+  result=await request(`/api/boards/${boardId}/cards/${secondCard.id}/move`,{method:'POST',cookie:adminCookie,body:{columnId:board.columns[1].id,position:0}});
+  assert.equal(result.response.status,200); assert.equal(result.data.card.columnId,board.columns[1].id);
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}/move`,{method:'POST',cookie:adminCookie,body:{columnId:board.columns[1].id,position:0}});
+  assert.equal(result.response.status,200); assert.equal(result.data.card.position,0);
+  result=await request(`/api/boards/${boardId}`,{method:'PUT',cookie:adminCookie,body:{name:'Conteúdo da agência'}});
+  assert.equal(result.response.status,200); assert.equal(result.data.board.name,'Conteúdo da agência');
+  result=await request(`/api/boards/${boardId}/columns`,{method:'POST',cookie:adminCookie,body:{name:'Aguardando material',color:'#4946f5'}});
+  assert.equal(result.response.status,201); const extraColumn=result.data.column;
+  result=await request(`/api/boards/${boardId}/columns/reorder`,{method:'POST',cookie:adminCookie,body:{columnIds:[extraColumn.id,board.columns[2].id,board.columns[0].id,board.columns[1].id]}});
+  assert.equal(result.response.status,200);
+  result=await request(`/api/boards/${boardId}/columns/reorder`,{method:'POST',cookie:adminCookie,body:{columnIds:[extraColumn.id]}});
+  assert.equal(result.response.status,400,'column reordering must include each active column exactly once');
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[1].id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,409,'columns with active cards cannot be archived');
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}`,{method:'PUT',cookie:adminCookie,body:{dueDate:'2026-02-30'}});
+  assert.equal(result.response.status,400,'invalid calendar dates are rejected');
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200); assert.equal(result.data.card.archived,true);
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200); assert.equal(result.data.card.archived,false); assert.equal(result.data.card.clientId,clientId);
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[0].id}`,{method:'PUT',cookie:adminCookie,body:{name:'Pautas'}});
+  assert.equal(result.response.status,200); assert.equal(result.data.column.name,'Pautas');
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200);
+  result=await request(`/api/boards/${boardId}/cards/${secondCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200);
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[1].id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200); assert.equal(result.data.column.archived,true);
+  result=await request('/api/boards',{cookie:adminCookie});
+  const archivedColumn=result.data.boards[0].columns.find(column=>column.id===board.columns[1].id);
+  assert.equal(archivedColumn.cards.length,2,'archiving a column preserves its archived cards');
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[1].id}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200); assert.equal(result.data.column.archived,false);
+  result=await request(`/api/boards/${boardId}/cards/${firstCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200); assert.equal(result.data.card.clientId,clientId);
+  result=await request(`/api/boards/${boardId}/cards/${secondCard.id}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200);
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[0].id}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200); assert.equal(result.data.column.archived,true);
+  result=await request(`/api/boards/${boardId}/columns/${board.columns[0].id}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200); assert.equal(result.data.column.archived,false);
+  result=await request(`/api/boards/${boardId}`,{method:'PUT',cookie:adminCookie,body:{archived:true}});
+  assert.equal(result.response.status,200); assert.equal(result.data.board.archived,true);
+  result=await request(`/api/boards/${boardId}`,{method:'PUT',cookie:adminCookie,body:{archived:false}});
+  assert.equal(result.response.status,200); assert.equal(result.data.board.archived,false);
+  result=await request('/api/roles',{method:'POST',cookie:adminCookie,body:{name:'Somente leitura de quadros',permissions:['boards.read']}});
+  assert.equal(result.response.status,201); const boardReaderRoleId=result.data.role.id;
+  result=await request('/api/users',{method:'POST',cookie:adminCookie,body:{name:'Leitor de quadros',email:'board-reader@example.com',password:'senha-board-reader-2026',roleId:boardReaderRoleId}});
+  assert.equal(result.response.status,201);
+  result=await request('/api/login',{method:'POST',body:{email:'board-reader@example.com',password:'senha-board-reader-2026'}});
+  assert.equal(result.response.status,200); const boardReaderCookie=result.response.headers.get('set-cookie').split(';')[0];
+  result=await request('/api/boards',{cookie:boardReaderCookie}); assert.equal(result.response.status,200);
+  const readerBoard=result.data.boards.find(item=>item.id===boardId);
+  const readerCard=readerBoard.columns.flatMap(column=>column.cards).find(card=>card.id===firstCard.id);
+  assert.equal(readerCard.clientId,''); assert.equal(readerCard.clientName,'','users without client-read access do not receive linked client details');
+  result=await request(`/api/boards/${boardId}/cards`,{method:'POST',cookie:boardReaderCookie,body:{columnId:board.columns[0].id,title:'Sem acesso ao cliente',clientId}});
+  assert.equal(result.response.status,403);
+  result=await request('/api/boards',{method:'POST',cookie:boardReaderCookie,body:{name:'Sem permissão de escrita'}});
+  assert.equal(result.response.status,403);
+});

@@ -1,0 +1,14 @@
+# Client records, uploaded artwork, SQLite databases, local encryption keys and AI keys
+/data/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Runtime and editor files
+node_modules/
+npm-debug.log*
+.DS_Store
+Thumbs.db
+*.log
